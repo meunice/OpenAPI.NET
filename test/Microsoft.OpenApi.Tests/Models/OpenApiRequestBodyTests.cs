@@ -1,143 +1,102 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license. 
+// Licensed under the MIT license.
 
 using System.Globalization;
 using System.IO;
-using FluentAssertions;
+using System.Threading.Tasks;
 using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi.Models.References;
 using Microsoft.OpenApi.Writers;
+using VerifyXunit;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Microsoft.OpenApi.Tests.Models
 {
     [Collection("DefaultSettings")]
     public class OpenApiRequestBodyTests
     {
-        public static OpenApiRequestBody AdvancedRequestBody = new OpenApiRequestBody
+        public static OpenApiRequestBody AdvancedRequestBody = new()
         {
             Description = "description",
             Required = true,
             Content =
             {
-                ["application/json"] = new OpenApiMediaType
+                ["application/json"] = new()
                 {
-                    Schema = new OpenApiSchema
+                    Schema = new()
                     {
-                        Type = "string"
+                        Type = JsonSchemaType.String
                     }
                 }
             }
         };
 
-        public static OpenApiRequestBody ReferencedRequestBody = new OpenApiRequestBody
+        public static OpenApiRequestBodyReference OpenApiRequestBodyReference = new(ReferencedRequestBody, "example1");
+        public static OpenApiRequestBody ReferencedRequestBody = new()
         {
-            Reference = new OpenApiReference
-            {
-                Type = ReferenceType.RequestBody,
-                Id = "example1",
-            },
             Description = "description",
             Required = true,
             Content =
             {
-                ["application/json"] = new OpenApiMediaType
+                ["application/json"] = new()
                 {
-                    Schema = new OpenApiSchema
+                    Schema = new()
                     {
-                        Type = "string"
+                        Type = JsonSchemaType.String
                     }
                 }
             }
         };
 
-        private readonly ITestOutputHelper _output;
-
-        public OpenApiRequestBodyTests(ITestOutputHelper output)
-        {
-            _output = output;
-        }
-
-        [Fact]
-        public void SerializeAdvancedRequestBodyAsV3JsonWorks()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SerializeAdvancedRequestBodyAsV3JsonWorksAsync(bool produceTerseOutput)
         {
             // Arrange
             var outputStringWriter = new StringWriter(CultureInfo.InvariantCulture);
-            var writer = new OpenApiJsonWriter(outputStringWriter);
-            var expected =
-                @"{
-  ""description"": ""description"",
-  ""content"": {
-    ""application/json"": {
-      ""schema"": {
-        ""type"": ""string""
-      }
-    }
-  },
-  ""required"": true
-}";
+            var writer = new OpenApiJsonWriter(outputStringWriter, new() { Terse = produceTerseOutput });
 
             // Act
             AdvancedRequestBody.SerializeAsV3(writer);
             writer.Flush();
-            var actual = outputStringWriter.GetStringBuilder().ToString();
 
             // Assert
-            actual = actual.MakeLineBreaksEnvironmentNeutral();
-            expected = expected.MakeLineBreaksEnvironmentNeutral();
-            actual.Should().Be(expected);
+            await Verifier.Verify(outputStringWriter).UseParameters(produceTerseOutput);
         }
 
-        [Fact]
-        public void SerializeReferencedRequestBodyAsV3JsonWorks()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SerializeReferencedRequestBodyAsV3JsonWorksAsync(bool produceTerseOutput)
         {
             // Arrange
             var outputStringWriter = new StringWriter(CultureInfo.InvariantCulture);
-            var writer = new OpenApiJsonWriter(outputStringWriter);
-            var expected =
-                @"{
-  ""$ref"": ""#/components/requestBodies/example1""
-}";
+            var writer = new OpenApiJsonWriter(outputStringWriter, new() { Terse = produceTerseOutput });
+
+            // Act
+            OpenApiRequestBodyReference.SerializeAsV3(writer);
+            writer.Flush();
+
+            // Assert
+            await Verifier.Verify(outputStringWriter).UseParameters(produceTerseOutput);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task SerializeReferencedRequestBodyAsV3JsonWithoutReferenceWorksAsync(bool produceTerseOutput)
+        {
+            // Arrange
+            var outputStringWriter = new StringWriter(CultureInfo.InvariantCulture);
+            var writer = new OpenApiJsonWriter(outputStringWriter, new() { Terse = produceTerseOutput });
 
             // Act
             ReferencedRequestBody.SerializeAsV3(writer);
             writer.Flush();
-            var actual = outputStringWriter.GetStringBuilder().ToString();
 
             // Assert
-            actual = actual.MakeLineBreaksEnvironmentNeutral();
-            expected = expected.MakeLineBreaksEnvironmentNeutral();
-            actual.Should().Be(expected);
-        }
-
-        [Fact]
-        public void SerializeReferencedRequestBodyAsV3JsonWithoutReferenceWorks()
-        {
-            // Arrange
-            var outputStringWriter = new StringWriter(CultureInfo.InvariantCulture);
-            var writer = new OpenApiJsonWriter(outputStringWriter);
-            var expected =
-                @"{
-  ""description"": ""description"",
-  ""content"": {
-    ""application/json"": {
-      ""schema"": {
-        ""type"": ""string""
-      }
-    }
-  },
-  ""required"": true
-}";
-
-            // Act
-            ReferencedRequestBody.SerializeAsV3WithoutReference(writer);
-            writer.Flush();
-            var actual = outputStringWriter.GetStringBuilder().ToString();
-
-            // Assert
-            actual = actual.MakeLineBreaksEnvironmentNeutral();
-            expected = expected.MakeLineBreaksEnvironmentNeutral();
-            actual.Should().Be(expected);
+            await Verifier.Verify(outputStringWriter).UseParameters(produceTerseOutput);
         }
     }
 }

@@ -1,19 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license. 
+// Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Interfaces;
+using Microsoft.OpenApi.Models.References;
 using Microsoft.OpenApi.Writers;
+
+#nullable enable
 
 namespace Microsoft.OpenApi.Models
 {
     /// <summary>
     /// Operation Object.
     /// </summary>
-    public class OpenApiOperation : IOpenApiSerializable, IOpenApiExtensible
+    public class OpenApiOperation : IOpenApiSerializable, IOpenApiExtensible, IOpenApiAnnotatable
     {
         /// <summary>
         /// Default value for <see cref="Deprecated"/>.
@@ -24,30 +26,30 @@ namespace Microsoft.OpenApi.Models
         /// A list of tags for API documentation control.
         /// Tags can be used for logical grouping of operations by resources or any other qualifier.
         /// </summary>
-        public IList<OpenApiTag> Tags { get; set; } = new List<OpenApiTag>();
+        public IList<OpenApiTag>? Tags { get; set; } = new List<OpenApiTag>();
 
         /// <summary>
         /// A short summary of what the operation does.
         /// </summary>
-        public string Summary { get; set; }
+        public string? Summary { get; set; }
 
         /// <summary>
         /// A verbose explanation of the operation behavior.
         /// CommonMark syntax MAY be used for rich text representation.
         /// </summary>
-        public string Description { get; set; }
+        public string? Description { get; set; }
 
         /// <summary>
         /// Additional external documentation for this operation.
         /// </summary>
-        public OpenApiExternalDocs ExternalDocs { get; set; }
+        public OpenApiExternalDocs? ExternalDocs { get; set; }
 
         /// <summary>
         /// Unique string used to identify the operation. The id MUST be unique among all operations described in the API.
         /// Tools and libraries MAY use the operationId to uniquely identify an operation, therefore,
         /// it is RECOMMENDED to follow common programming naming conventions.
         /// </summary>
-        public string OperationId { get; set; }
+        public string? OperationId { get; set; }
 
         /// <summary>
         /// A list of parameters that are applicable for this operation.
@@ -55,7 +57,7 @@ namespace Microsoft.OpenApi.Models
         /// The list MUST NOT include duplicated parameters. A unique parameter is defined by a combination of a name and location.
         /// The list can use the Reference Object to link to parameters that are defined at the OpenAPI Object's components/parameters.
         /// </summary>
-        public IList<OpenApiParameter> Parameters { get; set; } = new List<OpenApiParameter>();
+        public IList<OpenApiParameter>? Parameters { get; set; } = new List<OpenApiParameter>();
 
         /// <summary>
         /// The request body applicable for this operation.
@@ -63,12 +65,12 @@ namespace Microsoft.OpenApi.Models
         /// has explicitly defined semantics for request bodies.
         /// In other cases where the HTTP spec is vague, requestBody SHALL be ignored by consumers.
         /// </summary>
-        public OpenApiRequestBody RequestBody { get; set; }
+        public OpenApiRequestBody? RequestBody { get; set; }
 
         /// <summary>
         /// REQUIRED. The list of possible responses as they are returned from executing this operation.
         /// </summary>
-        public OpenApiResponses Responses { get; set; } = new OpenApiResponses();
+        public OpenApiResponses? Responses { get; set; } = new();
 
         /// <summary>
         /// A map of possible out-of band callbacks related to the parent operation.
@@ -78,7 +80,7 @@ namespace Microsoft.OpenApi.Models
         /// The key value used to identify the callback object is an expression, evaluated at runtime,
         /// that identifies a URL to use for the callback operation.
         /// </summary>
-        public IDictionary<string, OpenApiCallback> Callbacks { get; set; } = new Dictionary<string, OpenApiCallback>();
+        public IDictionary<string, OpenApiCallback>? Callbacks { get; set; } = new Dictionary<string, OpenApiCallback>();
 
         /// <summary>
         /// Declares this operation to be deprecated. Consumers SHOULD refrain from usage of the declared operation.
@@ -92,29 +94,71 @@ namespace Microsoft.OpenApi.Models
         /// This definition overrides any declared top-level security.
         /// To remove a top-level security declaration, an empty array can be used.
         /// </summary>
-        public IList<OpenApiSecurityRequirement> Security { get; set; } = new List<OpenApiSecurityRequirement>();
+        public IList<OpenApiSecurityRequirement>? Security { get; set; } = new List<OpenApiSecurityRequirement>();
 
         /// <summary>
         /// An alternative server array to service this operation.
         /// If an alternative server object is specified at the Path Item Object or Root level,
         /// it will be overridden by this value.
         /// </summary>
-        public IList<OpenApiServer> Servers { get; set; } = new List<OpenApiServer>();
+        public IList<OpenApiServer>? Servers { get; set; } = new List<OpenApiServer>();
 
         /// <summary>
         /// This object MAY be extended with Specification Extensions.
         /// </summary>
-        public IDictionary<string, IOpenApiExtension> Extensions { get; set; } = new Dictionary<string, IOpenApiExtension>();
+        public IDictionary<string, IOpenApiExtension>? Extensions { get; set; } = new Dictionary<string, IOpenApiExtension>();
+
+        /// <inheritdoc />
+        public IDictionary<string, object>? Annotations { get; set; }
+
+        /// <summary>
+        /// Parameterless constructor
+        /// </summary>
+        public OpenApiOperation() { }
+
+        /// <summary>
+        /// Initializes a copy of an <see cref="OpenApiOperation"/> object
+        /// </summary>
+        public OpenApiOperation(OpenApiOperation? operation)
+        {
+            Tags = operation?.Tags != null ? new List<OpenApiTag>(operation.Tags) : null;
+            Summary = operation?.Summary ?? Summary;
+            Description = operation?.Description ?? Description;
+            ExternalDocs = operation?.ExternalDocs != null ? new(operation?.ExternalDocs) : null;
+            OperationId = operation?.OperationId ?? OperationId;
+            Parameters = operation?.Parameters != null ? new List<OpenApiParameter>(operation.Parameters) : null;
+            RequestBody = operation?.RequestBody != null ? new(operation?.RequestBody) : null;
+            Responses = operation?.Responses != null ? new(operation?.Responses) : null;
+            Callbacks = operation?.Callbacks != null ? new Dictionary<string, OpenApiCallback>(operation.Callbacks) : null;
+            Deprecated = operation?.Deprecated ?? Deprecated;
+            Security = operation?.Security != null ? new List<OpenApiSecurityRequirement>(operation.Security) : null;
+            Servers = operation?.Servers != null ? new List<OpenApiServer>(operation.Servers) : null;
+            Extensions = operation?.Extensions != null ? new Dictionary<string, IOpenApiExtension>(operation.Extensions) : null;
+            Annotations = operation?.Annotations != null ? new Dictionary<string, object>(operation.Annotations) : null;
+        }
+
+        /// <summary>
+        /// Serialize <see cref="OpenApiOperation"/> to Open Api v3.1.
+        /// </summary>
+        public void SerializeAsV31(IOpenApiWriter writer)
+        {
+            SerializeInternal(writer, OpenApiSpecVersion.OpenApi3_1, (writer, element) => element.SerializeAsV31(writer));
+        }
 
         /// <summary>
         /// Serialize <see cref="OpenApiOperation"/> to Open Api v3.0.
         /// </summary>
         public void SerializeAsV3(IOpenApiWriter writer)
         {
-            if (writer == null)
-            {
-                throw Error.ArgumentNull(nameof(writer));
-            }
+            SerializeInternal(writer, OpenApiSpecVersion.OpenApi3_0, (writer, element) => element.SerializeAsV3(writer));
+        }
+
+        /// <summary>
+        /// Serialize <see cref="OpenApiOperation"/> to Open Api v3.0.
+        /// </summary>
+        private void SerializeInternal(IOpenApiWriter writer, OpenApiSpecVersion version, Action<IOpenApiWriter, IOpenApiSerializable> callback)
+        {
+            Utils.CheckArgumentNull(writer);;
 
             writer.WriteStartObject();
 
@@ -122,10 +166,7 @@ namespace Microsoft.OpenApi.Models
             writer.WriteOptionalCollection(
                 OpenApiConstants.Tags,
                 Tags,
-                (w, t) =>
-                {
-                    t.SerializeAsV3(w);
-                });
+                callback);
 
             // summary
             writer.WriteProperty(OpenApiConstants.Summary, Summary);
@@ -134,34 +175,34 @@ namespace Microsoft.OpenApi.Models
             writer.WriteProperty(OpenApiConstants.Description, Description);
 
             // externalDocs
-            writer.WriteOptionalObject(OpenApiConstants.ExternalDocs, ExternalDocs, (w, e) => e.SerializeAsV3(w));
+            writer.WriteOptionalObject(OpenApiConstants.ExternalDocs, ExternalDocs, callback);
 
             // operationId
             writer.WriteProperty(OpenApiConstants.OperationId, OperationId);
 
             // parameters
-            writer.WriteOptionalCollection(OpenApiConstants.Parameters, Parameters, (w, p) => p.SerializeAsV3(w));
+            writer.WriteOptionalCollection(OpenApiConstants.Parameters, Parameters, callback);
 
             // requestBody
-            writer.WriteOptionalObject(OpenApiConstants.RequestBody, RequestBody, (w, r) => r.SerializeAsV3(w));
+            writer.WriteOptionalObject(OpenApiConstants.RequestBody, RequestBody, callback);
 
             // responses
-            writer.WriteRequiredObject(OpenApiConstants.Responses, Responses, (w, r) => r.SerializeAsV3(w));
+            writer.WriteRequiredObject(OpenApiConstants.Responses, Responses, callback);
 
             // callbacks
-            writer.WriteOptionalMap(OpenApiConstants.Callbacks, Callbacks, (w, c) => c.SerializeAsV3(w));
+            writer.WriteOptionalMap(OpenApiConstants.Callbacks, Callbacks, callback);
 
             // deprecated
             writer.WriteProperty(OpenApiConstants.Deprecated, Deprecated, false);
 
             // security
-            writer.WriteOptionalCollection(OpenApiConstants.Security, Security, (w, s) => s.SerializeAsV3(w));
+            writer.WriteOptionalCollection(OpenApiConstants.Security, Security, callback);
 
             // servers
-            writer.WriteOptionalCollection(OpenApiConstants.Servers, Servers, (w, s) => s.SerializeAsV3(w));
+            writer.WriteOptionalCollection(OpenApiConstants.Servers, Servers, callback);
 
             // specification extensions
-            writer.WriteExtensions(Extensions, OpenApiSpecVersion.OpenApi3_0);
+            writer.WriteExtensions(Extensions, version);
 
             writer.WriteEndObject();
         }
@@ -171,10 +212,7 @@ namespace Microsoft.OpenApi.Models
         /// </summary>
         public void SerializeAsV2(IOpenApiWriter writer)
         {
-            if (writer == null)
-            {
-                throw Error.ArgumentNull(nameof(writer));
-            }
+            Utils.CheckArgumentNull(writer);;
 
             writer.WriteStartObject();
 
@@ -182,10 +220,7 @@ namespace Microsoft.OpenApi.Models
             writer.WriteOptionalCollection(
                 OpenApiConstants.Tags,
                 Tags,
-                (w, t) =>
-                {
-                    t.SerializeAsV2(w);
-                });
+                (w, t) => t.SerializeAsV2(w));
 
             // summary
             writer.WriteProperty(OpenApiConstants.Summary, Summary);
@@ -199,81 +234,66 @@ namespace Microsoft.OpenApi.Models
             // operationId
             writer.WriteProperty(OpenApiConstants.OperationId, OperationId);
 
-            IList<OpenApiParameter> parameters;
+            List<OpenApiParameter> parameters;
             if (Parameters == null)
             {
-                parameters = new List<OpenApiParameter>();
+                parameters = new();
             }
             else
             {
-                parameters = new List<OpenApiParameter>(Parameters);
+                parameters = new(Parameters);
             }
 
             if (RequestBody != null)
             {
                 // consumes
-                writer.WritePropertyName(OpenApiConstants.Consumes);
-                writer.WriteStartArray();
                 var consumes = RequestBody.Content.Keys.Distinct().ToList();
-                foreach (var mediaType in consumes)
+                if (consumes.Any())
                 {
-                    writer.WriteValue(mediaType);
-                }
-
-                writer.WriteEndArray();
-
-                // This is form data. We need to split the request body into multiple parameters.
-                if (consumes.Contains("application/x-www-form-urlencoded") ||
-                    consumes.Contains("multipart/form-data"))
-                {
-                    foreach (var property in RequestBody.Content.First().Value.Schema.Properties)
+                    // This is form data. We need to split the request body into multiple parameters.
+                    if (consumes.Contains("application/x-www-form-urlencoded") ||
+                        consumes.Contains("multipart/form-data"))
                     {
-                        var paramName = property.Key;
-                        var paramSchema = property.Value;
-                        if (paramSchema.Type == "string" && paramSchema.Format == "binary") {
-                            paramSchema.Type = "file";
-                            paramSchema.Format = null;
-                        }
-                        parameters.Add(
-                            new OpenApiFormDataParameter
-                            {
-                                Description = property.Value.Description,
-                                Name = property.Key,
-                                Schema = property.Value,
-                                Required = RequestBody.Content.First().Value.Schema.Required.Contains(property.Key)
-
-                            });
+                        parameters.AddRange(RequestBody.ConvertToFormDataParameters());
+                    }
+                    else
+                    {
+                        parameters.Add(RequestBody.ConvertToBodyParameter());
                     }
                 }
-                else
+                else if (RequestBody.Reference != null)
                 {
-                    var content = RequestBody.Content.Values.FirstOrDefault();
+                    var hostDocument = RequestBody.Reference.HostDocument;
+                    parameters.Add(
+                        new OpenApiParameterReference(RequestBody.Reference.Id, hostDocument));
 
-                    var bodyParameter = new OpenApiBodyParameter
-                    {
-                        Description = RequestBody.Description,
-                        // V2 spec actually allows the body to have custom name.
-                        // To allow round-tripping we use an extension to hold the name
-                        Name = "body",
-                        Schema = content?.Schema ?? new OpenApiSchema(),
-                        Required = RequestBody.Required,
-                        Extensions = RequestBody.Extensions.ToDictionary(k => k.Key, v => v.Value)  // Clone extensions so we can remove the x-bodyName extensions from the output V2 model.
-                    };
-
-                    if (bodyParameter.Extensions.ContainsKey(OpenApiConstants.BodyName))
-                    {
-                        bodyParameter.Name = (RequestBody.Extensions[OpenApiConstants.BodyName] as OpenApiString)?.Value ?? "body";
-                        bodyParameter.Extensions.Remove(OpenApiConstants.BodyName);
+                    if (hostDocument != null)
+                    {                        
+                        consumes = RequestBody.Content.Keys.Distinct().ToList();
                     }
-                    
-                    parameters.Add(bodyParameter);
+                }
+
+                if (consumes.Any())
+                {
+                    writer.WritePropertyName(OpenApiConstants.Consumes);
+                    writer.WriteStartArray();
+                    foreach (var mediaType in consumes)
+                    {
+                        writer.WriteValue(mediaType);
+                    }
+                    writer.WriteEndArray();
                 }
             }
 
             if (Responses != null)
             {
-                var produces = Responses.Where(r => r.Value.Content != null)
-                    .SelectMany(r => r.Value.Content?.Keys)
+                var produces = Responses
+                    .Where(static r => r.Value.Content != null)
+                    .SelectMany(static r => r.Value.Content?.Keys)
+                    .Concat(
+                        Responses
+                        .Where(static r => r.Value.Reference is {HostDocument: not null})
+                        .SelectMany(static r => r.Value.Content?.Keys))
                     .Distinct()
                     .ToList();
 
@@ -300,7 +320,7 @@ namespace Microsoft.OpenApi.Models
 
             // schemes
             // All schemes in the Servers are extracted, regardless of whether the host matches
-            // the host defined in the outermost Swagger object. This is due to the 
+            // the host defined in the outermost Swagger object. This is due to the
             // inaccessibility of information for that host in the context of an inner object like this Operation.
             if (Servers != null)
             {

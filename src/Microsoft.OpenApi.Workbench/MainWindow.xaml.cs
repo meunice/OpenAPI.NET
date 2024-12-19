@@ -1,6 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
 
+using System;
 using System.Windows;
 
 namespace Microsoft.OpenApi.Workbench
@@ -10,7 +11,7 @@ namespace Microsoft.OpenApi.Workbench
     /// </summary>
     public partial class MainWindow : Window
     {
-        private readonly MainModel _mainModel = new MainModel();
+        private readonly MainModel _mainModel = new();
 
         public MainWindow()
         {
@@ -18,9 +19,17 @@ namespace Microsoft.OpenApi.Workbench
             DataContext = _mainModel;
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e)
+#pragma warning disable VSTHRD100 // Avoid async void methods
+        private async void Button_Click(object sender, RoutedEventArgs e)
+#pragma warning restore VSTHRD100 // Avoid async void methods
         {
-            _mainModel.ParseDocument();
+            try
+            {
+                await _mainModel.ParseDocumentAsync();
+            } catch (Exception ex)
+            {
+                _mainModel.Errors = ex.Message;
+            }
         }
     }
 }

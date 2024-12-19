@@ -1,6 +1,7 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license. 
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
 
+using System;
 using Microsoft.OpenApi.Extensions;
 using Microsoft.OpenApi.Interfaces;
 using Microsoft.OpenApi.Writers;
@@ -12,6 +13,19 @@ namespace Microsoft.OpenApi.Models
     /// </summary>
     public class OpenApiReference : IOpenApiSerializable
     {
+        /// <summary>
+        /// A short summary which by default SHOULD override that of the referenced component.
+        /// If the referenced object-type does not allow a summary field, then this field has no effect.
+        /// </summary>
+        public string Summary { get; set; }
+
+        /// <summary>
+        /// A description which by default SHOULD override that of the referenced component.
+        /// CommonMark syntax MAY be used for rich text representation.
+        /// If the referenced object-type does not allow a description field, then this field has no effect.
+        /// </summary>
+        public string Description { get; set; }
+
         /// <summary>
         /// External resource in the reference.
         /// It maybe:
@@ -46,6 +60,16 @@ namespace Microsoft.OpenApi.Models
         public bool IsLocal => ExternalResource == null;
 
         /// <summary>
+        /// Gets a flag indicating whether a file is a valid OpenAPI document or a fragment
+        /// </summary>
+        public bool IsFragment = false;
+
+        /// <summary>
+        /// The OpenApiDocument that is hosting the OpenApiReference instance. This is used to enable dereferencing the reference.
+        /// </summary>
+        public OpenApiDocument HostDocument { get; set; }
+
+        /// <summary>
         /// Gets the full reference string for v3.0.
         /// </summary>
         public string ReferenceV3
@@ -54,12 +78,12 @@ namespace Microsoft.OpenApi.Models
             {
                 if (IsExternal)
                 {
-                    return GetExternalReference();
+                    return GetExternalReferenceV3();
                 }
 
                 if (!Type.HasValue)
                 {
-                    throw Error.ArgumentNull(nameof(Type));
+                    throw new ArgumentNullException(nameof(Type));
                 }
 
                 if (Type == ReferenceType.Tag)
@@ -71,8 +95,12 @@ namespace Microsoft.OpenApi.Models
                 {
                     return Id;
                 }
+                if (Id.StartsWith("http"))
+                {
+                    return Id;
+                }
 
-                return "#/components/" + Type.GetDisplayName() + "/" + Id;
+                return "#/components/" + Type.Value.GetDisplayName() + "/" + Id;
             }
         }
 
@@ -85,12 +113,12 @@ namespace Microsoft.OpenApi.Models
             {
                 if (IsExternal)
                 {
-                    return GetExternalReference();
+                    return GetExternalReferenceV2();
                 }
 
                 if (!Type.HasValue)
                 {
-                    throw Error.ArgumentNull(nameof(Type));
+                    throw new ArgumentNullException(nameof(Type));
                 }
 
                 if (Type == ReferenceType.Tag)
@@ -108,26 +136,54 @@ namespace Microsoft.OpenApi.Models
         }
 
         /// <summary>
+        /// Parameterless constructor
+        /// </summary>
+        public OpenApiReference() { }
+
+        /// <summary>
+        /// Initializes a copy instance of the <see cref="OpenApiReference"/> object
+        /// </summary>
+        public OpenApiReference(OpenApiReference reference)
+        {
+            Summary = reference?.Summary;
+            Description = reference?.Description;
+            ExternalResource = reference?.ExternalResource;
+            Type = reference?.Type;
+            Id = reference?.Id;
+            HostDocument = new(reference?.HostDocument);
+        }
+
+        /// <summary>
+        /// Serialize <see cref="OpenApiReference"/> to Open Api v3.1.
+        /// </summary>
+        public void SerializeAsV31(IOpenApiWriter writer)
+        {
+            // summary and description are in 3.1 but not in 3.0
+            writer.WriteProperty(OpenApiConstants.Summary, Summary);
+            writer.WriteProperty(OpenApiConstants.Description, Description);
+
+            SerializeInternal(writer);
+        }
+
+        /// <summary>
         /// Serialize <see cref="OpenApiReference"/> to Open Api v3.0.
         /// </summary>
         public void SerializeAsV3(IOpenApiWriter writer)
         {
-            if (writer == null)
-            {
-                throw Error.ArgumentNull(nameof(writer));
-            }
+            SerializeInternal(writer);
+        }
+
+        /// <summary>
+        /// Serialize <see cref="OpenApiReference"/>
+        /// </summary>
+        private void SerializeInternal(IOpenApiWriter writer)
+        {
+            Utils.CheckArgumentNull(writer);
 
             if (Type == ReferenceType.Tag)
             {
                 // Write the string value only
                 writer.WriteValue(ReferenceV3);
-                return;
-            }
-
-            if (Type == ReferenceType.SecurityScheme)
-            {
-                // Write the string as property name
-                writer.WritePropertyName(ReferenceV3);
                 return;
             }
 
@@ -144,10 +200,7 @@ namespace Microsoft.OpenApi.Models
         /// </summary>
         public void SerializeAsV2(IOpenApiWriter writer)
         {
-            if (writer == null)
-            {
-                throw Error.ArgumentNull(nameof(writer));
-            }
+            Utils.CheckArgumentNull(writer);;
 
             if (Type == ReferenceType.Tag)
             {
@@ -171,11 +224,34 @@ namespace Microsoft.OpenApi.Models
             writer.WriteEndObject();
         }
 
-        private string GetExternalReference()
+        private string GetExternalReferenceV3()
         {
             if (Id != null)
             {
-                return ExternalResource + "#/" + Id;
+                if (IsFragment)
+                {
+                    return ExternalResource + "#" + Id;
+                }
+
+                if (Id.StartsWith("http"))
+                {
+                    return Id;
+                }
+
+                if (Type.HasValue)
+                {
+                    return ExternalResource + "#/components/" + Type.Value.GetDisplayName() + "/"+ Id; 
+                }
+            }
+
+            return ExternalResource;
+        }
+
+        private string GetExternalReferenceV2()
+        {
+            if (Id != null)
+            {
+                return ExternalResource + "#/" + GetReferenceTypeNameAsV2((ReferenceType)Type) + "/" + Id;
             }
 
             return ExternalResource;
@@ -183,31 +259,17 @@ namespace Microsoft.OpenApi.Models
 
         private string GetReferenceTypeNameAsV2(ReferenceType type)
         {
-            switch (type)
+            return type switch
             {
-                case ReferenceType.Schema:
-                    return OpenApiConstants.Definitions;
-
-                case ReferenceType.Parameter:
-                    return OpenApiConstants.Parameters;
-
-                case ReferenceType.Response:
-                    return OpenApiConstants.Responses;
-
-                case ReferenceType.Header:
-                    return OpenApiConstants.Headers;
-
-                case ReferenceType.Tag:
-                    return OpenApiConstants.Tags;
-
-                case ReferenceType.SecurityScheme:
-                    return OpenApiConstants.SecurityDefinitions;
-
-                default:
-                    // If the reference type is not supported in V2, simply return null
-                    // to indicate that the reference is not pointing to any object.
-                    return null;
-            }
+                ReferenceType.Schema => OpenApiConstants.Definitions,
+                ReferenceType.Parameter or ReferenceType.RequestBody => OpenApiConstants.Parameters,
+                ReferenceType.Response => OpenApiConstants.Responses,
+                ReferenceType.Header => OpenApiConstants.Headers,
+                ReferenceType.Tag => OpenApiConstants.Tags,
+                ReferenceType.SecurityScheme => OpenApiConstants.SecurityDefinitions,
+                _ => null,// If the reference type is not supported in V2, simply return null
+                          // to indicate that the reference is not pointing to any object.
+            };
         }
     }
 }

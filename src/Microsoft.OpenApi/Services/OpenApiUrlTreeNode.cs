@@ -1,8 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.OpenApi.Models;
 
@@ -24,7 +25,7 @@ namespace Microsoft.OpenApi.Services
         /// <summary>
         /// The relative directory path of the current node from the root node.
         /// </summary>
-        public string Path { get; private set; } = "";
+        public string Path { get; set; } = "";
 
         /// <summary>
         /// Dictionary of labels and Path Item objects that describe the operations available on a node.
@@ -55,14 +56,9 @@ namespace Microsoft.OpenApi.Services
         /// <returns>true or false.</returns>
         public bool HasOperations(string label)
         {
-            Utils.CheckArgumentNullOrEmpty(label, nameof(label));
+            Utils.CheckArgumentNullOrEmpty(label);
 
-            if (!(PathItems?.ContainsKey(label) ?? false))
-            {
-                return false;
-            }
-
-            return PathItems[label].Operations?.Any() ?? false;
+            return PathItems is not null && PathItems.TryGetValue(label, out var item) && item.Operations is not null && item.Operations.Any();
         }
 
         /// <summary>
@@ -80,7 +76,7 @@ namespace Microsoft.OpenApi.Services
         /// <returns>The root node of the created <see cref="OpenApiUrlTreeNode"/> directory structure.</returns>
         public static OpenApiUrlTreeNode Create()
         {
-            return new OpenApiUrlTreeNode(RootPathSegment);
+            return new(RootPathSegment);
         }
 
         /// <summary>
@@ -91,8 +87,8 @@ namespace Microsoft.OpenApi.Services
         /// <returns>The root node of the created <see cref="OpenApiUrlTreeNode"/> directory structure.</returns>
         public static OpenApiUrlTreeNode Create(OpenApiDocument doc, string label)
         {
-            Utils.CheckArgumentNull(doc, nameof(doc));
-            Utils.CheckArgumentNullOrEmpty(label, nameof(label));
+            Utils.CheckArgumentNull(doc);
+            Utils.CheckArgumentNullOrEmpty(label);
 
             var root = Create();
 
@@ -117,8 +113,8 @@ namespace Microsoft.OpenApi.Services
         /// <param name="label">Name tag for labelling related <see cref="OpenApiUrlTreeNode"/> nodes in the directory structure.</param>
         public void Attach(OpenApiDocument doc, string label)
         {
-            Utils.CheckArgumentNull(doc, nameof(doc));
-            Utils.CheckArgumentNullOrEmpty(label, nameof(label));
+            Utils.CheckArgumentNull(doc);
+            Utils.CheckArgumentNullOrEmpty(label);
 
             var paths = doc.Paths;
             if (paths != null)
@@ -143,9 +139,9 @@ namespace Microsoft.OpenApi.Services
                                          OpenApiPathItem pathItem,
                                          string label)
         {
-            Utils.CheckArgumentNullOrEmpty(label, nameof(label));
-            Utils.CheckArgumentNullOrEmpty(path, nameof(path));
-            Utils.CheckArgumentNull(pathItem, nameof(pathItem));
+            Utils.CheckArgumentNullOrEmpty(label);
+            Utils.CheckArgumentNullOrEmpty(path);
+            Utils.CheckArgumentNull(pathItem);
 
             if (path.StartsWith(RootPathSegment))
             {
@@ -154,6 +150,13 @@ namespace Microsoft.OpenApi.Services
             }
 
             var segments = path.Split('/');
+            if (path.EndsWith("/", StringComparison.OrdinalIgnoreCase))
+            {
+                // Remove the last element, which is empty, and append the trailing slash to the new last element
+                // This is to support URLs with trailing slashes
+                Array.Resize(ref segments, segments.Length - 1);
+                segments[segments.Length - 1] += @"\";
+            }
 
             return Attach(segments: segments,
                           pathItem: pathItem,
@@ -179,7 +182,7 @@ namespace Microsoft.OpenApi.Services
             {
                 if (PathItems.ContainsKey(label))
                 {
-                    throw new ArgumentException("A duplicate label already exists for this node.", nameof(label));
+                    throw new ArgumentException($"A duplicate label already exists for this node: {label}", nameof(label));
                 }
 
                 Path = currentPath;
@@ -188,14 +191,15 @@ namespace Microsoft.OpenApi.Services
             }
 
             // If the child segment has already been defined, then insert into it
-            if (Children.ContainsKey(segment))
+            if (Children.TryGetValue(segment, out var child))
             {
                 var newPath = currentPath + PathSeparator + segment;
 
-                return Children[segment].Attach(segments: segments.Skip(1),
-                                                pathItem: pathItem,
-                                                label: label,
-                                                currentPath: newPath);
+                return child.Attach(
+                    segments: segments.Skip(1),
+                    pathItem: pathItem,
+                    label: label,
+                    currentPath: newPath);
             }
             else
             {
@@ -221,19 +225,161 @@ namespace Microsoft.OpenApi.Services
         /// <param name="additionalData">A dictionary of key value pairs that contain information about a node.</param>
         public void AddAdditionalData(Dictionary<string, List<string>> additionalData)
         {
-            Utils.CheckArgumentNull(additionalData, nameof(additionalData));
+            Utils.CheckArgumentNull(additionalData);
 
             foreach (var item in additionalData)
             {
-                if (AdditionalData.ContainsKey(item.Key))
-                {
-                    AdditionalData[item.Key] = item.Value;
-                }
-                else
-                {
-                    AdditionalData.Add(item.Key, item.Value);
-                }
+                AdditionalData[item.Key] = item.Value;
             }
         }
+
+        /// <summary>
+        /// Write tree as Mermaid syntax
+        /// </summary>
+        /// <param name="writer">StreamWriter to write the Mermaid content to</param>
+        public void WriteMermaid(TextWriter writer)
+        {
+            writer.WriteLine("graph LR");
+            foreach (var style in MermaidNodeStyles)
+            {
+                writer.WriteLine($"classDef {style.Key} fill:{style.Value.Color},stroke:#333,stroke-width:2px");
+            }
+
+            ProcessNode(this, writer);
+        }
+
+        /// <summary>
+        /// Dictionary that maps a set of HTTP methods to HTML color.  Keys are sorted, upper-cased, concatenated HTTP methods.
+        /// </summary>
+        public readonly static IReadOnlyDictionary<string, MermaidNodeStyle> MermaidNodeStyles = new Dictionary<string, MermaidNodeStyle>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "GET", new MermaidNodeStyle("lightSteelBlue", MermaidNodeShape.SquareCornerRectangle) },
+            { "POST", new MermaidNodeStyle("Lightcoral", MermaidNodeShape.OddShape) },
+            { "GET_POST", new MermaidNodeStyle("forestGreen", MermaidNodeShape.RoundedCornerRectangle) },
+            { "DELETE_GET_PATCH", new MermaidNodeStyle("yellowGreen", MermaidNodeShape.Circle) },
+            { "DELETE_GET_PATCH_PUT", new MermaidNodeStyle("oliveDrab", MermaidNodeShape.Circle) },
+            { "DELETE_GET_PUT", new MermaidNodeStyle("olive", MermaidNodeShape.Circle) },
+            { "DELETE_GET", new MermaidNodeStyle("DarkSeaGreen", MermaidNodeShape.Circle) },
+            { "DELETE", new MermaidNodeStyle("Tomato", MermaidNodeShape.Rhombus) },
+            { "OTHER", new MermaidNodeStyle("White", MermaidNodeShape.SquareCornerRectangle) },
+        };
+
+        private static void ProcessNode(OpenApiUrlTreeNode node, TextWriter writer)
+        {
+            var path = string.IsNullOrEmpty(node.Path) ? "/" : SanitizeMermaidNode(node.Path);
+            var methods = GetMethods(node);
+            var (startChar, endChar) = GetShapeDelimiters(methods);
+            foreach (var child in node.Children)
+            {
+                var childMethods = GetMethods(child.Value);
+                var (childStartChar, childEndChar) = GetShapeDelimiters(childMethods);
+                writer.WriteLine($"{path}{startChar}\"{node.Segment}\"{endChar} --> {SanitizeMermaidNode(child.Value.Path)}{childStartChar}\"{child.Key}\"{childEndChar}");
+                ProcessNode(child.Value, writer);
+            }
+            if (String.IsNullOrEmpty(methods)) methods = "OTHER";
+            writer.WriteLine($"class {path} {methods}");
+        }
+
+        private static string GetMethods(OpenApiUrlTreeNode node)
+        {
+            return String.Join("_", node.PathItems.SelectMany(p => p.Value.Operations.Select(o => o.Key))
+                .Distinct()
+                .Select(o => o.ToString().ToUpper())
+                .OrderBy(o => o)
+                .ToList());
+        }
+
+        private static (string, string) GetShapeDelimiters(string methods)
+        {
+            if (MermaidNodeStyles.TryGetValue(methods, out var style))
+            {
+                //switch on shape
+                switch (style.Shape)
+                {
+                    case MermaidNodeShape.Circle:
+                        return ("((", "))");
+                    case MermaidNodeShape.RoundedCornerRectangle:
+                        return ("(", ")");
+                    case MermaidNodeShape.Rhombus:
+                        return ("{", "}");
+                    case MermaidNodeShape.SquareCornerRectangle:
+                        return ("[", "]");
+                    case MermaidNodeShape.OddShape:
+                        return (">", "]");
+                    default:
+                        return ("[", "]");
+                }
+            }
+            else
+            {
+                return ("[", "]");
+            }
+        }
+        private static string SanitizeMermaidNode(string token)
+        {
+            return token.Replace("\\", "/")
+                    .Replace("{", ":")
+                    .Replace("}", "")
+                    .Replace(".", "_")
+                    .Replace("(", "_")
+                    .Replace(")", "_")
+                    .Replace(";", "_")
+                    .Replace("-", "_")
+                    .Replace("graph", "gra_ph")  // graph is a reserved word
+                    .Replace("default", "def_ault");  // default is a reserved word for classes
+        }
+    }
+    /// <summary>
+    /// Defines the color and shape of a node in a Mermaid graph diagram
+    /// </summary>
+    public class MermaidNodeStyle
+    {
+        /// <summary>
+        /// Create a style that defines the color and shape of a diagram element
+        /// </summary>
+        /// <param name="color"></param>
+        /// <param name="shape"></param>
+        internal MermaidNodeStyle(string color, MermaidNodeShape shape)
+        {
+            Color = color;
+            Shape = shape;
+        }
+
+        /// <summary>
+        /// The CSS color name of the diagram element
+        /// </summary>
+        public string Color { get; }
+
+        /// <summary>
+        /// The shape of the diagram element
+        /// </summary>
+        public MermaidNodeShape Shape { get; }
+    }
+
+    /// <summary>
+    /// Shapes supported by Mermaid diagrams
+    /// </summary>
+    public enum MermaidNodeShape
+    {
+        /// <summary>
+        /// Rectangle with square corners
+        /// </summary>
+        SquareCornerRectangle,
+        /// <summary>
+        /// Rectangle with rounded corners
+        /// </summary>
+        RoundedCornerRectangle,
+        /// <summary>
+        /// Circle
+        /// </summary>
+        Circle,
+        /// <summary>
+        /// Rhombus
+        /// </summary>
+        Rhombus,
+        /// <summary>
+        /// Odd shape
+        /// </summary>
+        OddShape
     }
 }

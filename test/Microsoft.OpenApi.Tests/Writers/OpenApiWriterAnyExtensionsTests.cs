@@ -1,12 +1,18 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT license. 
+// Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Writers;
+using VerifyXunit;
 using Xunit;
 
 namespace Microsoft.OpenApi.Tests.Writers
@@ -14,207 +20,266 @@ namespace Microsoft.OpenApi.Tests.Writers
     [Collection("DefaultSettings")]
     public class OpenApiWriterAnyExtensionsTests
     {
-        [Fact]
-        public void WriteOpenApiNullAsJsonWorks()
+        static bool[] shouldProduceTerseOutputValues = new[] { true, false };
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WriteOpenApiNullAsJsonWorksAsync(bool produceTerseOutput)
         {
             // Arrange
-            var nullValue = new OpenApiNull();
-
-            var json = WriteAsJson(nullValue);
+            var json = await WriteAsJsonAsync(null, produceTerseOutput);
 
             // Assert
             json.Should().Be("null");
         }
 
+        public static IEnumerable<object[]> IntInputs
+        {
+            get
+            {
+                return
+                    from input in new[] {
+                        int.MinValue,
+                        42,
+                        int.MaxValue,
+                     }
+                    from shouldBeTerse in shouldProduceTerseOutputValues
+                    select new object[] { input, shouldBeTerse };
+            }
+        }
+
         [Theory]
-        [InlineData(int.MinValue)]
-        [InlineData(42)]
-        [InlineData(int.MaxValue)]
-        public void WriteOpenApiIntegerAsJsonWorks(int input)
+        [MemberData(nameof(IntInputs))]
+        public async Task WriteOpenApiIntegerAsJsonWorksAsync(int input, bool produceTerseOutput)
         {
             // Arrange
-            var intValue = new OpenApiInteger(input);
+            var intValue = input;
 
-            var json = WriteAsJson(intValue);
+            var json = await WriteAsJsonAsync(intValue, produceTerseOutput);
 
             // Assert
             json.Should().Be(input.ToString());
         }
 
+        public static IEnumerable<object[]> LongInputs
+        {
+            get
+            {
+                return
+                    from input in new[] {
+                        long.MinValue,
+                        42,
+                        long.MaxValue,
+                     }
+                    from shouldBeTerse in shouldProduceTerseOutputValues
+                    select new object[] { input, shouldBeTerse };
+            }
+        }
+
         [Theory]
-        [InlineData(long.MinValue)]
-        [InlineData(42)]
-        [InlineData(long.MaxValue)]
-        public void WriteOpenApiLongAsJsonWorks(long input)
+        [MemberData(nameof(LongInputs))]
+        public async Task WriteOpenApiLongAsJsonWorksAsync(long input, bool produceTerseOutput)
         {
             // Arrange
-            var longValue = new OpenApiLong(input);
+            var longValue = input;
 
-            var json = WriteAsJson(longValue);
+            var json = await WriteAsJsonAsync(longValue, produceTerseOutput);
 
             // Assert
             json.Should().Be(input.ToString());
         }
 
+        public static IEnumerable<object[]> FloatInputs
+        {
+            get
+            {
+                return
+                    from input in new[] {
+                        float.MinValue,
+                        42.42f,
+                        float.MaxValue,
+                     }
+                    from shouldBeTerse in shouldProduceTerseOutputValues
+                    select new object[] { input, shouldBeTerse };
+            }
+        }
+
         [Theory]
-        [InlineData(float.MinValue)]
-        [InlineData(42.42)]
-        [InlineData(float.MaxValue)]
-        public void WriteOpenApiFloatAsJsonWorks(float input)
+        [MemberData(nameof(FloatInputs))]
+        public async Task WriteOpenApiFloatAsJsonWorksAsync(float input, bool produceTerseOutput)
         {
             // Arrange
-            var floatValue = new OpenApiFloat(input);
+            var floatValue = input;
 
-            var json = WriteAsJson(floatValue);
+            var json = await WriteAsJsonAsync(floatValue, produceTerseOutput);
 
             // Assert
             json.Should().Be(input.ToString());
         }
 
+        public static IEnumerable<object[]> DoubleInputs
+        {
+            get
+            {
+                return
+                    from input in new[] {
+                        double.MinValue,
+                        42.42d,
+                        double.MaxValue,
+                     }
+                    from shouldBeTerse in shouldProduceTerseOutputValues
+                    select new object[] { input, shouldBeTerse };
+            }
+        }
+
         [Theory]
-        [InlineData(double.MinValue)]
-        [InlineData(42.42)]
-        [InlineData(double.MaxValue)]
-        public void WriteOpenApiDoubleAsJsonWorks(double input)
+        [MemberData(nameof(DoubleInputs))]
+        public async Task WriteOpenApiDoubleAsJsonWorksAsync(double input, bool produceTerseOutput)
         {
             // Arrange
-            var doubleValue = new OpenApiDouble(input);
+            var doubleValue = input;
 
-            var json = WriteAsJson(doubleValue);
+            var json = await WriteAsJsonAsync(doubleValue, produceTerseOutput);
 
             // Assert
             json.Should().Be(input.ToString());
         }
 
+        public static IEnumerable<object[]> StringifiedDateTimes
+        {
+            get
+            {
+                return
+                    from input in new [] {
+                        "2017-1-2",
+                        "1999-01-02T12:10:22",
+                        "1999-01-03",
+                        "10:30:12"
+                     }
+                    from shouldBeTerse in shouldProduceTerseOutputValues
+                    select new object[] { input, shouldBeTerse };
+            }
+        }
+
         [Theory]
-        [InlineData("2017-1-2")]
-        [InlineData("1999-01-02T12:10:22")]
-        [InlineData("1999-01-03")]
-        [InlineData("10:30:12")]
-        public void WriteOpenApiDateTimeAsJsonWorks(string inputString)
+        [MemberData(nameof(StringifiedDateTimes))]
+        public async Task WriteOpenApiDateTimeAsJsonWorksAsync(string inputString, bool produceTerseOutput)
         {
             // Arrange
             var input = DateTimeOffset.Parse(inputString, CultureInfo.InvariantCulture);
-            var dateTimeValue = new OpenApiDateTime(input);
+            var dateTimeValue = input;
 
-            var json = WriteAsJson(dateTimeValue);
+            var json = await WriteAsJsonAsync(dateTimeValue, produceTerseOutput);
             var expectedJson = "\"" + input.ToString("o") + "\"";
 
             // Assert
             json.Should().Be(expectedJson);
         }
 
+        public static IEnumerable<object[]> BooleanInputs
+        {
+            get =>
+                from input in new [] { true, false }
+                from shouldBeTerse in shouldProduceTerseOutputValues
+                select new object[] { input, shouldBeTerse };
+        }
+
         [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public void WriteOpenApiBooleanAsJsonWorks(bool input)
+        [MemberData(nameof(BooleanInputs))]
+        public async Task WriteOpenApiBooleanAsJsonWorksAsync(bool input, bool produceTerseOutput)
         {
             // Arrange
-            var boolValue = new OpenApiBoolean(input);
+            var boolValue = input;
 
-            var json = WriteAsJson(boolValue);
+            var json = await WriteAsJsonAsync(boolValue, produceTerseOutput);
 
             // Assert
             json.Should().Be(input.ToString().ToLower());
         }
 
-        [Fact]
-        public void WriteOpenApiObjectAsJsonWorks()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WriteOpenApiObjectAsJsonWorksAsync(bool produceTerseOutput)
         {
             // Arrange
-            var openApiObject = new OpenApiObject
+            var openApiObject = new JsonObject
             {
-                {"stringProp", new OpenApiString("stringValue1")},
-                {"objProp", new OpenApiObject()},
+                {"stringProp", "stringValue1"},
+                {"objProp", new JsonObject()},
                 {
                     "arrayProp",
-                    new OpenApiArray
+                    new JsonArray
                     {
-                        new OpenApiBoolean(false)
+                        false
                     }
                 }
             };
 
-            var actualJson = WriteAsJson(openApiObject);
+            var actualJson = WriteAsJsonAsync(openApiObject, produceTerseOutput);
 
             // Assert
-
-            var expectedJson = @"{
-  ""stringProp"": ""stringValue1"",
-  ""objProp"": { },
-  ""arrayProp"": [
-    false
-  ]
-}";
-            expectedJson = expectedJson.MakeLineBreaksEnvironmentNeutral();
-
-            actualJson.Should().Be(expectedJson);
+            await Verifier.Verify(actualJson).UseParameters(produceTerseOutput);
         }
 
-        [Fact]
-        public void WriteOpenApiArrayAsJsonWorks()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task WriteOpenApiArrayAsJsonWorksAsync(bool produceTerseOutput)
         {
             // Arrange
-            var openApiObject = new OpenApiObject
+            var openApiObject = new JsonObject
             {
-                {"stringProp", new OpenApiString("stringValue1")},
-                {"objProp", new OpenApiObject()},
+                {"stringProp", "stringValue1"},
+                {"objProp", new JsonObject()},
                 {
                     "arrayProp",
-                    new OpenApiArray
+                    new JsonArray
                     {
-                        new OpenApiBoolean(false)
+                        false
                     }
                 }
             };
 
-            var array = new OpenApiArray
+            var array = new JsonArray
             {
-                new OpenApiBoolean(false),
+                false,
                 openApiObject,
-                new OpenApiString("stringValue2")
+                "stringValue2"
             };
 
-            var actualJson = WriteAsJson(array);
+            var actualJson = WriteAsJsonAsync(array, produceTerseOutput);
 
             // Assert
-
-            var expectedJson = @"[
-  false,
-  {
-    ""stringProp"": ""stringValue1"",
-    ""objProp"": { },
-    ""arrayProp"": [
-      false
-    ]
-  },
-  ""stringValue2""
-]";
-
-            expectedJson = expectedJson.MakeLineBreaksEnvironmentNeutral();
-
-            actualJson.Should().Be(expectedJson);
+            await Verifier.Verify(actualJson).UseParameters(produceTerseOutput);
         }
 
-        private static string WriteAsJson(IOpenApiAny any)
+        private static async Task<string> WriteAsJsonAsync(JsonNode any, bool produceTerseOutput = false)
         {
             // Arrange (continued)
-            var stream = new MemoryStream();
-            IOpenApiWriter writer = new OpenApiJsonWriter(new StreamWriter(stream));
+            using var stream = new MemoryStream();
+            var writer = new OpenApiJsonWriter(
+                new StreamWriter(stream),
+                new() { Terse = produceTerseOutput });
 
             writer.WriteAny(any);
             writer.Flush();
             stream.Position = 0;
 
             // Act
-            var value = new StreamReader(stream).ReadToEnd();
-
-            if (any.AnyType == AnyType.Primitive || any.AnyType == AnyType.Null)
+            using var sr = new StreamReader(stream);
+            var value = await sr.ReadToEndAsync();
+            var element = JsonDocument.Parse(value).RootElement;
+            return element.ValueKind switch
             {
-                return value;
-            }
-
-            return value.MakeLineBreaksEnvironmentNeutral();
+                JsonValueKind.String => value,
+                JsonValueKind.Number => value,
+                JsonValueKind.Null => value,
+                JsonValueKind.False => value,
+                JsonValueKind.True => value,
+                _ => value.MakeLineBreaksEnvironmentNeutral(),
+            };
         }
     }
 }
